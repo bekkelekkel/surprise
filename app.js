@@ -155,7 +155,7 @@
         fouten++; cancelScene();
         b.classList.add("wrong"); b.disabled = true;
         fb.className = "feedback bad"; fb.textContent = "Fout… probeer het nog eens.";
-        sint(roast(), 3.0); g("sint_shake");
+        sint(roast(), 3.5); g("punish");
         if (fouten === 3) setTimeout(() => lars("Wacht even...\ndat wist ik\necht wel...", 2.5), 700);
       }
     };
@@ -255,7 +255,7 @@
       if (v === C.briefjeCode.toUpperCase()) { g("sint_nod"); complete(4); }
       else {
         $("#fb").className = "feedback bad"; $("#fb").textContent = "Dat is hem niet. Zoek verder!";
-        cancelScene(); g("sint_say", "level4_fail"); g("sint_shake");
+        cancelScene(); g("sint_say", "level4_fail"); g("punish");
       }
     };
     $("#checkCode").onclick = check;
@@ -291,6 +291,23 @@
     tick();
   }
 
+  // ---------------- geluidseffecten (Godot vraagt erom via postMessage) ----------------
+  const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.wav") };
+  Object.values(SFX).forEach((a) => (a.preload = "auto"));
+  function unlockSfx() {   // telefoons: geluid moet eerst één keer binnen een klik gestart zijn
+    for (const a of Object.values(SFX)) {
+      a.muted = true;
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
+    }
+  }
+  addEventListener("message", (e) => {
+    const m = e.data;
+    if (!m || m.type !== "sfx" || !SFX[m.name]) return;
+    const a = SFX[m.name];
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  });
+
   // ---------------- tekstballonnen (Godot stuurt via postMessage) ----------------
   const bubbleTimers = {};
   addEventListener("message", (e) => {
@@ -307,6 +324,7 @@
   // ---------------- start ----------------
   document.querySelectorAll(".naam").forEach((n) => (n.textContent = C.naam));
   $("#startBtn").onclick = () => {
+    unlockSfx();
     $("#intro").hidden = true;
     $("#app").hidden = false;
     startGame();
