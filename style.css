@@ -165,3 +165,7 @@ body.has-panel .stage { position: sticky; top: 8px; z-index: 5; aspect-ratio: au
 .bubble.lars::after { left: 22px; }
 .bubble.pop { animation: pop .25s ease-out; }
 @keyframes pop { from { transform: scale(.7); opacity: 0; } }
+
+.top-right { display: flex; align-items: center; gap: 14px; }
+.btn-small { font-size: 14px; padding: 7px 14px; background: rgba(255,255,255,.12); color: var(--cream); box-shadow: none; border: 2px solid rgba(242,182,50,.6); }
+.btn-small:hover { background: rgba(242,182,50,.25); }

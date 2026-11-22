@@ -38,6 +38,7 @@
         if (frame.contentWindow && frame.contentWindow.godot_heads_ready) {
           gameReady = true; clearInterval(t);
           while (pending.length) send(...pending.shift());
+          if (!lastScene) setTimeout(playIntro, 1200);
         }
       } catch {}
     }, 250);
@@ -45,6 +46,25 @@
   const sint = (text, sec = 3.5) => g("sint_talk", `${text}|${sec}`);
   const lars = (text, sec = 3.0) => g("lars_talk", `${text}|${sec}`);
   const roast = () => C.roasts[Math.floor(Math.random() * C.roasts.length)];
+
+  // ---------------- scènes (dialogen) + herhaal ----------------
+  let sceneTimers = [];
+  let lastScene = null;
+  function cancelScene() { sceneTimers.forEach(clearTimeout); sceneTimers = []; }
+  function playScene(lines) {
+    cancelScene();
+    lastScene = lines;
+    let t = 0;
+    for (const [who, text, sec] of lines) {
+      sceneTimers.push(setTimeout(() => (who === "lars" ? lars : sint)(wrap(text), sec), t * 1000));
+      t += sec + 0.7;
+    }
+  }
+  function playIntro() {
+    const next = LEVELS.find((l) => !isDone(l.id));
+    if (done.length === 0) playScene(C.intro);
+    else if (next) playScene([["sint", `Welkom terug, ${C.naam}! Op naar vakje ${next.id}.`, 4]]);
+  }
 
   async function startGame() {
     try {
@@ -103,7 +123,7 @@
   function openLevel(id) {
     if (!isUnlocked(id)) return;
     stopRap();
-    g("level_start", id);
+    playScene(C.levelIntro[id]);
     ({ 1: () => quiz(1, "GTA", "GTA ken jij als je broekzak? Bewijs het maar.", C.gta),
        2: rap,
        3: jargon,
@@ -132,7 +152,7 @@
         g("sint_nod");
         setTimeout(() => { i++; i < vragen.length ? show() : complete(id); }, 900);
       } else {
-        fouten++;
+        fouten++; cancelScene();
         b.classList.add("wrong"); b.disabled = true;
         fb.className = "feedback bad"; fb.textContent = "Fout… probeer het nog eens.";
         sint(roast(), 3.0); g("sint_shake");
@@ -217,7 +237,7 @@
       <div class="actions"><button class="btn btn-gold" id="lachten" disabled>Ze lachten! 😂</button></div>`);
     const boxes = [...document.querySelectorAll(".term input")];
     boxes.forEach((b) => b.addEventListener("change", () => {
-      if (b.checked) lars(wrap(C.jargon[b.dataset.n].term + "? Makkie."), 2);
+      if (b.checked) { cancelScene(); lars(wrap(C.jargon[b.dataset.n].term + "? Makkie."), 2.5); }
       $("#lachten").disabled = !boxes.every((x) => x.checked);
     }));
     $("#lachten").onclick = () => complete(3);
@@ -235,7 +255,7 @@
       if (v === C.briefjeCode.toUpperCase()) { g("sint_nod"); complete(4); }
       else {
         $("#fb").className = "feedback bad"; $("#fb").textContent = "Dat is hem niet. Zoek verder!";
-        g("sint_say", "level4_fail"); g("sint_shake");
+        cancelScene(); g("sint_say", "level4_fail"); g("sint_shake");
       }
     };
     $("#checkCode").onclick = check;
@@ -294,6 +314,7 @@
     if (done.length === 5) win();
   };
   $("#panelClose").onclick = closePanel;
+  $("#replayBtn").onclick = () => (lastScene ? playScene(lastScene) : playIntro());
   $("#winClose").onclick = () => { $("#win").hidden = true; };
   $("#resetBtn").onclick = () => {
     if (confirm("Alle voortgang wissen en opnieuw beginnen?")) { done = []; save(); closePanel(); renderBoard(); }

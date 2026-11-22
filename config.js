@@ -4,6 +4,34 @@
 window.SURPRISE_CONFIG = {
   naam: "Lars",
 
+  // Openingsdialoog: [wie, tekst, seconden]. Wordt rustig na elkaar afgespeeld,
+  // en is opnieuw af te spelen met de knop "Herhaal".
+  intro: [
+    ["sint", "Ho ho ho! Daar ben je dan, Lars.", 3.5],
+    ["lars", "Huh? Sinterklaas? In mijn browser?", 3.0],
+    ["sint", "Ik heb in mijn grote boek gelezen... dat jij denkt dat je alles kan.", 4.5],
+    ["sint", "GTA, Fortnite, rappen... en dan ook nog fan van Ye!", 4.5],
+    ["lars", "Ye is de GOAT, Sint.", 3.0],
+    ["sint", "Dat zullen we nog wel eens zien. Ik heb 5 opdrachten voor je.", 4.5],
+    ["sint", "Haal je ze alle 5, dan geeft de Sint toe dat jij de beste bent.", 4.5],
+    ["lars", "Deal. Makkelijk.", 2.5],
+    ["sint", "Klik op vakje 1. Succes... je gaat het nodig hebben!", 4.0],
+  ],
+
+  // Wat Sint en Lars zeggen als een opdracht opent (ook te herhalen)
+  levelIntro: {
+    1: [["sint", "GTA ken jij als je broekzak? Bewijzen maar!", 4.0],
+        ["lars", "GTA 5? Dat speel ik al sinds dag 1!", 3.5]],
+    2: [["sint", "Rap! Bewijs dat jij beter bent dan Ye!", 4.0],
+        ["lars", "Rappen? Oké... Ye, kijk en leer!", 3.5]],
+    3: [["sint", "Leg dat jargon uit... Als ze lachen heb je 't goed!", 4.5],
+        ["lars", "Technische Bedrijfskunde? Daar snappen jullie niks van!", 4.0]],
+    4: [["sint", "Zoek het briefje. Het ligt ergens waar jij nooit kijkt...", 4.5],
+        ["lars", "Waar ik nooit kijk? Dat is overal.", 3.0]],
+    5: [["sint", "Laatste kans! Fortnite is jouw wereld. Bewijzen!", 4.0],
+        ["lars", "Victory Royale incoming.", 3.0]],
+  },
+
   // Level 4: de code die op het verstopte briefje staat (hoofdletters maakt niet uit)
   briefjeCode: "PEPERNOOT",
   briefjeHint: "Het ligt ergens waar jij nooit kijkt... (tip van Piet: denk aan je huiswerk)",
