@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Surprise van de Sint</title>
+  <meta name="description" content="Een Sinterklaas-surprise voor Lars: 5 opdrachten, 1 Sint.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Startscherm: klik nodig zodat de browser geluid mag afspelen -->
+  <section id="intro" class="intro">
+    <div class="intro-card">
+      <p class="eyebrow">5 december · Pakjesavond</p>
+      <h1>Er is een surprise<br>voor <span class="naam">Lars</span>…</h1>
+      <p class="sub">van de Sint himself. Vijf opdrachten. Eén grote prijs.<br>Zet je geluid aan.</p>
+      <button id="startBtn" class="btn btn-gold btn-big">Start</button>
+    </div>
+  </section>
+
+  <main id="app" class="app" hidden>
+    <header class="top">
+      <h2>De Sint <span>vs</span> <span class="naam">Lars</span></h2>
+      <div class="progress"><span id="progressText">0 / 5</span><div class="bar"><i id="progressBar"></i></div></div>
+    </header>
+
+    <div class="stage" id="stage">
+      <iframe id="game" title="Sint en Lars" allow="autoplay"></iframe>
+      <div class="bubble sint" id="bubbleSint" hidden></div>
+      <div class="bubble lars" id="bubbleLars" hidden></div>
+      <div class="stage-fallback" id="stageFallback" hidden>
+        <div>🎁</div>
+        <p>Sint en Lars zijn nog onderweg…<br><small>(game nog niet geëxporteerd naar <code>website/game/</code>)</small></p>
+      </div>
+    </div>
+
+    <section class="board" id="board" aria-label="Opdrachten"></section>
+
+    <section class="panel" id="panel" hidden>
+      <button class="close" id="panelClose" aria-label="Sluiten">×</button>
+      <div id="panelBody"></div>
+    </section>
+
+    <footer class="foot">
+      <button id="resetBtn" class="link">opnieuw beginnen</button>
+    </footer>
+  </main>
+
+  <section id="win" class="win" hidden>
+    <div class="win-card">
+      <p class="eyebrow">Alle vakjes open</p>
+      <h1>De Sint geeft het toe…</h1>
+      <p class="sub"><span class="naam">Lars</span> is de beste. Maar het rappen? Dat laat je toch maar aan de old skool mannen over.</p>
+      <p class="sub small">Deze oude Reus is uit van hier. Zie je later…. Ha jen tooo</p>
+      <button id="winClose" class="btn btn-gold">Nog één keer kijken</button>
+    </div>
+    <canvas id="confetti"></canvas>
+  </section>
+
+  <audio id="rapAudio" preload="none"></audio>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
