@@ -175,3 +175,6 @@ body.has-panel .stage { position: sticky; top: 8px; z-index: 5; aspect-ratio: au
 .toss.won { background: var(--red); color: #fff; border-style: solid; animation: pop .3s ease-out; }
 
 .rap-now { font-weight: 800; color: var(--red); margin: 12px 0 0; animation: pulse 1.3s infinite; }
+
+/* puntje van de ballon wijst naar het hoofd (positie gezet door app.js) */
+.bubble::after { left: var(--tail, 22px) !important; right: auto !important; }

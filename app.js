@@ -173,6 +173,7 @@
       if (n === v.ok) {
         b.classList.add("right");
         fb.className = "feedback good"; fb.textContent = "Goed!";
+        ping();
         document.querySelectorAll(".opt").forEach((o) => (o.disabled = true));
         g("sint_nod");
         setTimeout(() => { i++; i < vragen.length ? show() : complete(id); }, 900);
@@ -311,7 +312,7 @@
       <div class="feedback" id="fb"></div>`);
     const check = () => {
       const v = $("#code").value.trim().toUpperCase();
-      if (v === C.briefjeCode.toUpperCase()) { g("sint_nod"); complete(4); }
+      if (v === C.briefjeCode.toUpperCase()) { ping(); g("sint_nod"); complete(4); }
       else {
         $("#fb").className = "feedback bad"; $("#fb").textContent = "Dat is hem niet. Zoek verder!";
         cancelScene(); g("sint_say", "level4_fail"); g("punish");
@@ -351,7 +352,8 @@
   }
 
   // ---------------- geluidseffecten (Godot vraagt erom via postMessage) ----------------
-  const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.mp3") };
+  const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.mp3"), ping: new Audio("audio/ping.wav") };
+  const ping = () => { try { SFX.ping.currentTime = 0; SFX.ping.play().catch(() => {}); } catch {} };
   Object.values(SFX).forEach((a) => (a.preload = "auto"));
   function unlockSfx() {   // telefoons: geluid moet eerst één keer binnen een klik gestart zijn
     for (const a of Object.values(SFX)) {
@@ -379,10 +381,25 @@
     if (vdur) m.dur = Math.max(+m.dur || 0, vdur + 0.3);
     el.textContent = String(m.text).replace(/\s*\n\s*/g, " ");
     el.hidden = false;
+    placeBubble(el, m.who === "lars" ? "lars" : "sint", m.hx);
     el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
     clearTimeout(bubbleTimers[m.who]);
     bubbleTimers[m.who] = setTimeout(() => (el.hidden = true), Math.max(1.5, +m.dur || 3) * 1000 + 600);
   });
+
+  // Ballon horizontaal bij het hoofd van de spreker; het puntje wijst naar het hoofd.
+  // Sint: ballon links van zijn hoofd, Lars: rechts ervan (zo overlappen ze elkaar niet).
+  function placeBubble(el, who, hx) {
+    const stage = $("#stage").getBoundingClientRect();
+    if (typeof hx !== "number" || !stage.width) { el.style.left = el.style.right = ""; return; }
+    el.style.right = "auto"; el.style.left = "0px";
+    const w = el.offsetWidth, pad = 8, anchor = hx * stage.width;
+    let left = who === "lars" ? anchor - 34 : anchor - w + 34;
+    left = Math.max(pad, Math.min(stage.width - w - pad, left));
+    el.style.left = left + "px";
+    const tail = Math.max(14, Math.min(w - 26, anchor - left - 12));
+    el.style.setProperty("--tail", tail + "px");
+  }
 
   function hideBubbles() { $("#bubbleSint").hidden = true; $("#bubbleLars").hidden = true; }
 
