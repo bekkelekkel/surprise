@@ -65,6 +65,14 @@
   <script>
   (() => {
     const C = window.SURPRISE_CONFIG;
+
+    // Laat de site (ook in een ander tabblad) weten dat we opnemen: dan zet die de beat stil.
+    try {
+      const bc = new BroadcastChannel("sint-surprise");
+      const beat = () => bc.postMessage("recorder-open");
+      beat(); setInterval(beat, 2000);
+      addEventListener("pagehide", () => bc.postMessage("recorder-closed"));
+    } catch {}
     const groups = VOICE.allLines(C);
     const all = groups.flatMap((g) => g.lines);
     const $ = (s) => document.querySelector(s);
@@ -159,9 +167,10 @@
       recorder = mr;
       mr.ondataavailable = (e) => e.data.size && myChunks.push(e.data);
       mr.onstop = async () => {
-        const blob = new Blob(myChunks, { type: mr.mimeType || type || "audio/webm" });
-        const dur = await durationOf(blob);
-        const rec = { key: line.key, who: line.who, text: line.text, blob, dur, type: blob.type };
+        const raw = new Blob(myChunks, { type: mr.mimeType || type || "audio/webm" });
+        let blob = raw, dur;
+        try { ({ blob, dur } = await cleanUp(raw)); } catch { dur = await durationOf(raw); }
+        const rec = { key: line.key, who: line.who, text: line.text, blob, dur, type: blob.type, trimmed: blob.type === "audio/wav" };
         recs.set(line.key, rec); await put(rec);
         if (recorder === mr) { current = null; render(); play(line.key); }
         else { // er loopt al een nieuwe opname: alleen de status van deze regel bijwerken
@@ -189,6 +198,49 @@
       });
     }
 
+    // ---------- stilte wegknippen + opslaan als WAV ----------
+    const OUT_RATE = 24000;
+    async function cleanUp(blob) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC();
+      let buf;
+      try { buf = await ctx.decodeAudioData(await blob.arrayBuffer()); }
+      finally { try { ctx.close(); } catch {} }
+      // mono mixdown
+      const n = buf.length, sr = buf.sampleRate, mono = new Float32Array(n);
+      for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels; }
+      // energie per 10 ms, drempel t.o.v. ruisvloer en piek
+      const win = Math.round(sr * 0.01), rms = [];
+      for (let i = 0; i < n; i += win) { let e = 0; const end = Math.min(n, i + win); for (let j = i; j < end; j++) e += mono[j] * mono[j]; rms.push(Math.sqrt(e / (end - i))); }
+      const sorted = [...rms].sort((a, b) => a - b);
+      const floor = sorted[Math.floor(sorted.length * 0.2)] || 0, peak = sorted[sorted.length - 1] || 0;
+      const thr = Math.max(0.008, floor * 2.5, peak * 0.08);
+      let first = rms.findIndex((v) => v > thr), last = rms.length - 1 - [...rms].reverse().findIndex((v) => v > thr);
+      if (first < 0) { first = 0; last = rms.length - 1; }
+      const start = Math.max(0, (first * win) - Math.round(sr * 0.06));
+      const stop = Math.min(n, (last + 1) * win + Math.round(sr * 0.15));
+      const cut = mono.subarray(start, stop);
+      // naar 24 kHz + normaliseren
+      const outLen = Math.max(1, Math.round(cut.length * OUT_RATE / sr));
+      const off = new OfflineAudioContext(1, outLen, OUT_RATE);
+      const src = off.createBufferSource(); const b = off.createBuffer(1, cut.length, sr); b.copyToChannel(cut, 0);
+      src.buffer = b; src.connect(off.destination); src.start();
+      const res = (await off.startRendering()).getChannelData(0);
+      let pk = 0; for (const v of res) pk = Math.max(pk, Math.abs(v));
+      const gain = pk > 0 ? Math.min(4, 0.9 / pk) : 1;
+      return { blob: toWav(res, OUT_RATE, gain), dur: res.length / OUT_RATE };
+    }
+    function toWav(samples, rate, gain) {
+      const dv = new DataView(new ArrayBuffer(44 + samples.length * 2));
+      const w = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); };
+      w(0, "RIFF"); dv.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+      dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+      dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+      w(36, "data"); dv.setUint32(40, samples.length * 2, true);
+      for (let i = 0; i < samples.length; i++) dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i] * gain)) * 32767, true);
+      return new Blob([dv], { type: "audio/wav" });
+    }
+
     let player = null;
     function play(key) {
       const r = recs.get(key); if (!r) return;
@@ -200,7 +252,7 @@
     $("#zipBtn").onclick = async () => {
       const zip = new JSZip(); const manifest = {};
       for (const r of recs.values()) {
-        const ext = r.type.includes("mp4") ? "m4a" : r.type.includes("ogg") ? "ogg" : "webm";
+        const ext = r.type.includes("wav") ? "wav" : r.type.includes("mp4") ? "m4a" : r.type.includes("ogg") ? "ogg" : "webm";
         const file = `${r.key}.${ext}`;
         zip.file(file, r.blob);
         manifest[r.key] = { file, dur: +r.dur.toFixed(2), who: r.who, text: r.text };
@@ -212,7 +264,24 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     };
 
-    openDb().then(getAll).then((list) => { for (const r of list) recs.set(r.key, r); render(); });
+    openDb().then(getAll).then(async (list) => {
+      for (const r of list) recs.set(r.key, r);
+      render();
+      const todo = list.filter((r) => !r.trimmed);
+      if (!todo.length) return;
+      const note = $("#micNote"); note.className = "notice";
+      let k = 0;
+      for (const r of todo) {
+        note.textContent = `Stilte wordt uit je bestaande opnames geknipt… (${++k}/${todo.length})`;
+        try {
+          const { blob, dur } = await cleanUp(r.blob);
+          const nr = { ...r, blob, dur, type: blob.type, trimmed: true };
+          recs.set(r.key, nr); await put(nr);
+        } catch {}
+      }
+      note.textContent = `Klaar: de stilte is uit ${todo.length} bestaande opname(s) geknipt. Luister ze even terug.`;
+      render();
+    });
   })();
   </script>
 </body>

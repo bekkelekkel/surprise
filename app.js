@@ -196,7 +196,7 @@
   const bg = new Audio("audio/beat.mp3");
   bg.loop = true; bg.volume = 0; bg.preload = "auto";
   let bgFade = null;
-  function fadeBg(to, ms = 1200) {
+  let fadeBg = function (to, ms = 1200) {
     clearInterval(bgFade);
     if (to > 0 && bg.paused) bg.play().catch(() => {});
     const from = bg.volume, steps = Math.max(1, Math.round(ms / 50)); let i = 0;
@@ -204,7 +204,20 @@
       i++; bg.volume = Math.max(0, Math.min(1, from + (to - from) * (i / steps)));
       if (i >= steps) { clearInterval(bgFade); if (to === 0) bg.pause(); }
     }, 50);
-  }
+  };
+
+  // Staat de inspreekpagina open (ook in een ander tabblad)? Dan de beat stil, anders komt hij in de opnames.
+  let recorderSeen = 0;
+  const recorderOpen = () => Date.now() - recorderSeen < 5000;
+  try {
+    const bc = new BroadcastChannel("sint-surprise");
+    bc.onmessage = (e) => {
+      if (e.data === "recorder-open") { if (!recorderOpen()) fadeBg(0, 300); recorderSeen = Date.now(); }
+      if (e.data === "recorder-closed") { recorderSeen = 0; if (!$("#app").hidden && !rapPlaying) fadeBg(BG_VOL, 1500); }
+    };
+  } catch {}
+  const _fadeBg = fadeBg;
+  fadeBg = (to, ms) => _fadeBg(recorderOpen() ? 0 : to, ms);
 
   let rapPlaying = false;
   function stopRap() {
