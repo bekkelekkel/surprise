@@ -37,6 +37,7 @@
     .meter { width: 160px; height: 14px; border-radius: 99px; background: rgba(255,255,255,.15); overflow: hidden; }
     .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), var(--gold), var(--red)); transition: width .06s; }
     #micStatus { color: var(--muted); font-weight: 700; }
+    .diag { font: 700 13px/1.5 ui-monospace, Consolas, monospace; color: var(--muted); background: rgba(0,0,0,.25); padding: 8px 10px; border-radius: 8px; margin: 0 0 12px; }
     .notice.err { background: rgba(179,21,27,.25); border-color: var(--red); }
     .rec-banner { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: flex; gap: 14px; align-items: center;
       justify-content: center; flex-wrap: wrap; padding: 12px 16px; background: var(--red); color: #fff; font-weight: 800;
@@ -62,6 +63,7 @@
         <div class="meter" title="Geluidsniveau"><i id="meterBar"></i></div>
         <span id="micStatus">Klik eerst op "Test microfoon" en praat: de balk moet meebewegen.</span>
       </div>
+      <p class="diag" id="micDiag" hidden></p>
       <p class="notice" id="micNote">Tip: gebruik een rustige ruimte en houd de telefoon of microfoon op ongeveer een hand afstand. Je mag overdrijven: het is de Sint.</p>
     </header>
 
@@ -237,15 +239,27 @@
       const an = meterCtx.createAnalyser(); an.fftSize = 1024;
       meterCtx.createMediaStreamSource(stream).connect(an);
       const data = new Float32Array(an.fftSize);
-      let quiet = 0;
+      let maxRms = 0, lastDiag = 0;
+      const diag = (rms) => {
+        if (performance.now() - lastDiag < 250) return; lastDiag = performance.now();
+        const t = stream && stream.getAudioTracks()[0];
+        const d = $("#micDiag"); d.hidden = false;
+        d.textContent = `Microfoon: ${t ? (t.label || "onbekend") : "geen"} · ${t ? (t.readyState === "live" ? "actief" : "gestopt") : ""}` +
+          `${t && t.muted ? " · GEDEMPT (door Windows of het apparaat)" : ""}${t && !t.enabled ? " · uitgeschakeld" : ""}` +
+          ` · meter: ${meterCtx.state} · niveau nu ${rms.toFixed(4)} (hoogste ${maxRms.toFixed(4)})`;
+      };
       const loop = () => {
         an.getFloatTimeDomainData(data);
         let e = 0; for (const v of data) e += v * v;
         const rms = Math.sqrt(e / data.length);
         $("#meterBar").style.width = Math.min(100, rms * 600) + "%";
+        maxRms = Math.max(maxRms * 0.995, rms);
+        diag(rms);
         meterRaf = requestAnimationFrame(loop);
       };
-      if (meterCtx.state === "suspended") meterCtx.resume();
+      if (meterCtx.state === "suspended") meterCtx.resume().catch(() => {});
+      // sommige browsers starten audio pas na een klik: bij de volgende klik nogmaals proberen
+      addEventListener("pointerdown", () => meterCtx && meterCtx.state === "suspended" && meterCtx.resume(), { once: true });
       loop();
     }
     $("#micTest").onclick = async () => {
