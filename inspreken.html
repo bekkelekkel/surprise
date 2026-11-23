@@ -212,12 +212,15 @@
       if (n === "NotReadableError" || n === "AbortError") return "De microfoon is bezet door een ander programma (bijv. Teams, Zoom, Discord). Sluit dat programma en probeer opnieuw.";
       return "De microfoon werkt niet: " + (e && (e.name + " " + e.message) || e);
     }
+    let rawMode = false;   // true = zonder ruis-/echo-onderdrukking (sommige laptops geven anders stilte)
+    let zeroSince = 0;
     async function openMic(deviceId) {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw { name: "Unsupported", message: "deze browser kan niet opnemen. Gebruik Chrome of Edge." };
       if (!window.MediaRecorder) throw { name: "Unsupported", message: "deze browser kan niet opnemen. Gebruik Chrome of Edge." };
       if (stream) stream.getTracks().forEach((t) => t.stop());
       stream = null;
-      const audio = { echoCancellation: true, noiseSuppression: true };
+      const audio = rawMode ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+                            : { echoCancellation: true, noiseSuppression: true };
       if (deviceId) audio.deviceId = { exact: deviceId };
       stream = await navigator.mediaDevices.getUserMedia({ audio });
       // lijst met microfoons vullen (namen zijn pas zichtbaar na toestemming)
@@ -257,7 +260,7 @@
         const d = $("#micDiag"); d.hidden = false;
         d.textContent = `Microfoon: ${t ? (t.label || "onbekend") : "geen"} · ${t ? (t.readyState === "live" ? "actief" : "gestopt") : ""}` +
           `${t && t.muted ? " · GEDEMPT (door Windows of het apparaat)" : ""}${t && !t.enabled ? " · uitgeschakeld" : ""}` +
-          ` · meter: ${meterCtx.state} · niveau nu ${rms.toFixed(4)} (hoogste ${maxRms.toFixed(4)})`;
+          ` · meter: ${meterCtx.state}${rawMode ? " · zonder filters" : ""} · niveau nu ${rms.toFixed(4)} (hoogste ${maxRms.toFixed(4)})`;
       };
       const loop = () => {
         an.getFloatTimeDomainData(data);
@@ -266,6 +269,19 @@
         $("#meterBar").style.width = Math.min(100, rms * 600) + "%";
         maxRms = Math.max(maxRms * 0.995, rms);
         diag(rms);
+        // 3 s lang exact stilte? opnieuw proberen zonder browser-filters
+        if (rms === 0) {
+          if (!zeroSince) zeroSince = performance.now();
+          if (!rawMode && performance.now() - zeroSince > 3000) {
+            rawMode = true; zeroSince = 0;
+            $("#micStatus").textContent = "Geen geluid: ik probeer de microfoon zonder ruisfilter…";
+            openMic($("#micSel").value || undefined).catch((e) => showError(explain(e)));
+            return;
+          }
+          if (rawMode && performance.now() - zeroSince > 3000 && !$("#micNote").classList.contains("err")) {
+            showError("De microfoon geeft helemaal geen geluid (niveau 0). Staat de microfoon-dempknop op je laptop aan (vaak F4/F8 met een microfoontje)? Of staat het invoervolume in Windows op 0 (Instellingen → Systeem → Geluid → Invoer)? Probeer ook een andere microfoon in de lijst, of de browser Edge.");
+          }
+        } else zeroSince = 0;
         meterRaf = requestAnimationFrame(loop);
       };
       if (meterCtx.state === "suspended") meterCtx.resume().catch(() => {});
