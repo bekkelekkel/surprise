@@ -235,9 +235,20 @@
       cancelAnimationFrame(meterRaf);
       try { meterCtx && meterCtx.close(); } catch {}
       const AC = window.AudioContext || window.webkitAudioContext;
-      meterCtx = new AC();
+      // Firefox: de meter moet dezelfde samplefrequentie hebben als de microfoon, anders blijft hij stil
+      const tr = stream.getAudioTracks()[0];
+      const rate = tr && tr.getSettings ? tr.getSettings().sampleRate : undefined;
+      let src;
+      try {
+        meterCtx = rate ? new AC({ sampleRate: rate }) : new AC();
+        src = meterCtx.createMediaStreamSource(stream);
+      } catch (e) {
+        try { meterCtx && meterCtx.close(); } catch {}
+        meterCtx = new AC();
+        src = meterCtx.createMediaStreamSource(stream);
+      }
       const an = meterCtx.createAnalyser(); an.fftSize = 1024;
-      meterCtx.createMediaStreamSource(stream).connect(an);
+      src.connect(an);
       const data = new Float32Array(an.fftSize);
       let maxRms = 0, lastDiag = 0;
       const diag = (rms) => {
