@@ -75,13 +75,11 @@
   (() => {
     const C = window.SURPRISE_CONFIG;
 
-    // Laat de site (ook in een ander tabblad) weten dat we opnemen: dan zet die de beat stil.
-    try {
-      const bc = new BroadcastChannel("sint-surprise");
-      const beat = () => bc.postMessage("recorder-open");
-      beat(); setInterval(beat, 2000);
-      addEventListener("pagehide", () => bc.postMessage("recorder-closed"));
-    } catch {}
+    // Alleen tijdens een opname: laat de site (ander tabblad) weten dat hij de beat even stil moet zetten.
+    let bc = null;
+    try { bc = new BroadcastChannel("sint-surprise"); } catch {}
+    const tell = (m) => { try { bc && bc.postMessage(m); } catch {} };
+    addEventListener("pagehide", () => tell("recording-done"));
     const groups = VOICE.allLines(C);
     const all = groups.flatMap((g) => g.lines);
     const $ = (s) => document.querySelector(s);
@@ -205,6 +203,7 @@
       mr.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
       mr.onstop = async () => {
         clearInterval(st.tick); clearTimeout(st.auto);
+        tell("recording-done");
         st.phase = "processing"; updateUI();
         const raw = new Blob(chunks, { type: mr.mimeType || type || "audio/webm" });
         let blob = raw, dur = 0;
@@ -216,7 +215,8 @@
       };
       mr.start(250);                              // elke 250 ms een stukje: niets gaat verloren
       st.phase = "recording"; st.t0 = Date.now();
-      st.tick = setInterval(updateUI, 250);
+      tell("recording");
+      st.tick = setInterval(() => { updateUI(); if ((Date.now() - st.t0) % 2000 < 260) tell("recording"); }, 250);
       st.auto = setTimeout(stopRec, 20000);       // veiligheid: na 20 s vanzelf stoppen
       updateUI();
     }

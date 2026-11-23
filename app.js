@@ -146,6 +146,7 @@
 
   function openLevel(id) {
     if (!isUnlocked(id)) return;
+    if (!bgStarted) { bgStarted = true; bg.play().catch(() => {}); }   // beat begint bij de eerste opdracht
     stopRap();
     currentLevel = id;
     playScene(C.levelIntro[id]);
@@ -206,18 +207,20 @@
     }, 50);
   };
 
-  // Staat de inspreekpagina open (ook in een ander tabblad)? Dan de beat stil, anders komt hij in de opnames.
+  // Wordt er op de inspreekpagina (ander tabblad) opgenomen? Dan even de beat stil, anders komt hij in de opname.
+  let bgStarted = false;
   let recorderSeen = 0;
   const recorderOpen = () => Date.now() - recorderSeen < 5000;
   try {
     const bc = new BroadcastChannel("sint-surprise");
     bc.onmessage = (e) => {
-      if (e.data === "recorder-open") { if (!recorderOpen()) fadeBg(0, 300); recorderSeen = Date.now(); }
-      if (e.data === "recorder-closed") { recorderSeen = 0; if (!$("#app").hidden && !rapPlaying) fadeBg(BG_VOL, 1500); }
+      // alleen stil terwijl er echt een zin wordt opgenomen
+      if (e.data === "recording") { if (!recorderOpen()) _fadeBg(0, 300); recorderSeen = Date.now(); }
+      if (e.data === "recording-done") { recorderSeen = 0; if (bgStarted && !rapPlaying) _fadeBg(BG_VOL, 1500); }
     };
   } catch {}
   const _fadeBg = fadeBg;
-  fadeBg = (to, ms) => _fadeBg(recorderOpen() ? 0 : to, ms);
+  fadeBg = (to, ms) => _fadeBg(recorderOpen() || !bgStarted ? 0 : to, ms);
 
   let rapPlaying = false;
   function stopRap() {
@@ -437,7 +440,7 @@
   document.querySelectorAll(".naam").forEach((n) => (n.textContent = C.naam));
   $("#startBtn").onclick = () => {
     unlockSfx();
-    bg.play().then(() => fadeBg(BG_VOL, 2500)).catch(() => {});
+
     $("#intro").hidden = true;
     $("#app").hidden = false;
     startGame();
