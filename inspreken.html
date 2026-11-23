@@ -32,6 +32,11 @@
     .ib.rec.on { background: #222; animation: pulse 1s infinite; }
     .ib:disabled { opacity: .35; cursor: default; }
     .notice { background: rgba(242,182,50,.15); border: 1px solid rgba(242,182,50,.5); border-radius: 12px; padding: 12px 14px; color: var(--cream); }
+    .mic-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0 14px; }
+    .mic-row select { font: 700 15px "Nunito", sans-serif; padding: 9px 10px; border-radius: 10px; max-width: 320px; }
+    .meter { width: 160px; height: 14px; border-radius: 99px; background: rgba(255,255,255,.15); overflow: hidden; }
+    .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--ok), var(--gold), var(--red)); transition: width .06s; }
+    #micStatus { color: var(--muted); font-weight: 700; }
     .notice.err { background: rgba(179,21,27,.25); border-color: var(--red); }
     .rec-banner { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: flex; gap: 14px; align-items: center;
       justify-content: center; flex-wrap: wrap; padding: 12px 16px; background: var(--red); color: #fff; font-weight: 800;
@@ -51,6 +56,12 @@
       <p>Neem per zin de stem op van de Sint of van Lars. Klik op <b>● Opnemen</b>, spreek de zin in en klik op <b>■ Stop</b> (in de rode balk bovenin, of druk op de spatiebalk). Na maximaal 20 seconden stopt hij vanzelf.
         Met <b>▶</b> luister je terug, en een nieuwe opname vervangt de oude. Je opnames blijven in deze browser bewaard, ook als je de pagina sluit.
         Klaar? Klik op <b>Download alles</b> en geef het zip-bestand aan Claude.</p>
+      <div class="mic-row">
+        <button class="btn btn-gold" id="micTest">🎤 Test microfoon</button>
+        <select id="micSel" hidden></select>
+        <div class="meter" title="Geluidsniveau"><i id="meterBar"></i></div>
+        <span id="micStatus">Klik eerst op "Test microfoon" en praat: de balk moet meebewegen.</span>
+      </div>
       <p class="notice" id="micNote">Tip: gebruik een rustige ruimte en houd de telefoon of microfoon op ongeveer een hand afstand. Je mag overdrijven: het is de Sint.</p>
     </header>
 
@@ -74,6 +85,8 @@
   <script>
   (() => {
     const C = window.SURPRISE_CONFIG;
+    addEventListener("error", (e) => { const n = document.getElementById("micNote"); if (n) { n.className = "notice err"; n.textContent = "Er ging iets mis: " + e.message; } });
+    addEventListener("unhandledrejection", (e) => { const n = document.getElementById("micNote"); if (n) { n.className = "notice err"; n.textContent = "Er ging iets mis: " + (e.reason && (e.reason.message || e.reason.name) || e.reason); } });
 
     // Alleen tijdens een opname: laat de site (ander tabblad) weten dat hij de beat even stil moet zetten.
     let bc = null;
@@ -187,18 +200,78 @@
       startRec(line);
     }
 
+    // ---------- microfoon kiezen + niveaumeter ----------
+    let meterCtx = null, meterRaf = 0;
+    function showError(msg) { const n = $("#micNote"); n.className = "notice err"; n.textContent = msg; }
+    function explain(e) {
+      const n = e && e.name;
+      if (n === "NotAllowedError" || n === "SecurityError") return "De browser geeft geen toegang tot de microfoon. Klik op het slotje (of het microfoon-icoon) links naast het adres, zet Microfoon op Toestaan en herlaad de pagina. Controleer ook in Windows: Instellingen → Privacy → Microfoon → 'Apps toegang geven' staat aan.";
+      if (n === "NotFoundError" || n === "OverconstrainedError") return "Er is geen microfoon gevonden. Sluit een microfoon/headset aan of kies een andere in de lijst.";
+      if (n === "NotReadableError" || n === "AbortError") return "De microfoon is bezet door een ander programma (bijv. Teams, Zoom, Discord). Sluit dat programma en probeer opnieuw.";
+      return "De microfoon werkt niet: " + (e && (e.name + " " + e.message) || e);
+    }
+    async function openMic(deviceId) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw { name: "Unsupported", message: "deze browser kan niet opnemen. Gebruik Chrome of Edge." };
+      if (!window.MediaRecorder) throw { name: "Unsupported", message: "deze browser kan niet opnemen. Gebruik Chrome of Edge." };
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+      const audio = { echoCancellation: true, noiseSuppression: true };
+      if (deviceId) audio.deviceId = { exact: deviceId };
+      stream = await navigator.mediaDevices.getUserMedia({ audio });
+      // lijst met microfoons vullen (namen zijn pas zichtbaar na toestemming)
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+      const cur = stream.getAudioTracks()[0];
+      const curId = cur && cur.getSettings ? cur.getSettings().deviceId : "";
+      const sel = $("#micSel");
+      sel.innerHTML = devs.map((d, i) => `<option value="${d.deviceId}" ${d.deviceId === curId ? "selected" : ""}>${d.label || "Microfoon " + (i + 1)}</option>`).join("");
+      sel.hidden = devs.length < 2;
+      startMeter();
+      $("#micStatus").textContent = "Praat maar: beweegt de balk mee? Dan werkt de microfoon.";
+      const n = $("#micNote"); if (n.classList.contains("err")) { n.className = "notice"; n.textContent = "Microfoon staat aan."; }
+    }
+    function startMeter() {
+      cancelAnimationFrame(meterRaf);
+      try { meterCtx && meterCtx.close(); } catch {}
+      const AC = window.AudioContext || window.webkitAudioContext;
+      meterCtx = new AC();
+      const an = meterCtx.createAnalyser(); an.fftSize = 1024;
+      meterCtx.createMediaStreamSource(stream).connect(an);
+      const data = new Float32Array(an.fftSize);
+      let quiet = 0;
+      const loop = () => {
+        an.getFloatTimeDomainData(data);
+        let e = 0; for (const v of data) e += v * v;
+        const rms = Math.sqrt(e / data.length);
+        $("#meterBar").style.width = Math.min(100, rms * 600) + "%";
+        meterRaf = requestAnimationFrame(loop);
+      };
+      if (meterCtx.state === "suspended") meterCtx.resume();
+      loop();
+    }
+    $("#micTest").onclick = async () => {
+      try { await openMic($("#micSel").value || undefined); } catch (e) { showError(explain(e)); $("#micStatus").textContent = "Microfoon werkt niet (zie melding)."; }
+    };
+    $("#micSel").onchange = async () => {
+      try { await openMic($("#micSel").value); } catch (e) { showError(explain(e)); }
+    };
+
     async function startRec(line) {
       st.phase = "starting"; st.key = line.key; st.line = line; updateUI();
       try {
-        if (!stream) stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+        if (!stream || !stream.active) await openMic($("#micSel").value || undefined);
       } catch (e) {
         st.phase = "idle"; st.key = null; updateUI();
-        const n = $("#micNote"); n.className = "notice err";
-        n.textContent = "De microfoon mag niet gebruikt worden. Sta de microfoon toe (slotje naast het adres) en probeer opnieuw.";
+        showError(explain(e));
         return;
       }
       const type = pickType(), chunks = [];
-      const mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      let mr;
+      try { mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined); }
+      catch (e) {
+        try { mr = new MediaRecorder(stream); }
+        catch (e2) { st.phase = "idle"; st.key = null; updateUI(); showError("Opnemen lukt niet in deze browser: " + e2.message + ". Probeer Chrome of Edge."); return; }
+      }
+      mr.onerror = (e) => showError("Fout tijdens opnemen: " + ((e.error && e.error.message) || "onbekend"));
       st.mr = mr;
       mr.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
       mr.onstop = async () => {
@@ -207,7 +280,10 @@
         st.phase = "processing"; updateUI();
         const raw = new Blob(chunks, { type: mr.mimeType || type || "audio/webm" });
         let blob = raw, dur = 0;
-        try { ({ blob, dur } = await cleanUp(raw)); } catch { dur = await durationOf(raw); }
+        let peak = 1;
+        if (!chunks.length || raw.size < 200) showError("Er is niets opgenomen. Kies een andere microfoon in de lijst en probeer opnieuw.");
+        try { ({ blob, dur, peak } = await cleanUp(raw)); } catch { dur = await durationOf(raw); }
+        if (peak < 0.006) showError("Er kwam (bijna) geen geluid binnen. Kies een andere microfoon in de lijst (en kijk of de balk meebeweegt als je praat), of zet de microfoon in Windows harder.");
         const rec = { key: line.key, who: line.who, text: line.text, blob, dur, type: blob.type, trimmed: blob.type === "audio/wav" };
         recs.set(line.key, rec); await put(rec);
         st.phase = "idle"; st.key = null; st.line = null; st.mr = null;
@@ -278,7 +354,8 @@
       const res = (await off.startRendering()).getChannelData(0);
       let pk = 0; for (const v of res) pk = Math.max(pk, Math.abs(v));
       const gain = pk > 0 ? Math.min(4, 0.9 / pk) : 1;
-      return { blob: toWav(res, OUT_RATE, gain), dur: res.length / OUT_RATE };
+      const loud = sorted[Math.floor(sorted.length * 0.9)] || 0;   // niveau over de hele opname (klikjes tellen niet)
+      return { blob: toWav(res, OUT_RATE, gain), dur: res.length / OUT_RATE, peak: loud };
     }
     function toWav(samples, rate, gain) {
       const dv = new DataView(new ArrayBuffer(44 + samples.length * 2));
