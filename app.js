@@ -171,9 +171,11 @@
   // ---------------- Level 2: rap ----------------
   let rapTimer = null;
   const audio = $("#rapAudio");
+  let rapPlaying = false;
   function stopRap() {
     clearInterval(rapTimer); rapTimer = null;
     audio.pause();
+    if (rapPlaying) { rapPlaying = false; g("rap_stop"); }
   }
   function rap() {
     openPanel(`<p class="step">Opdracht 2 · rap battle</p><h3>Sint vs ${C.naam}</h3>
@@ -183,7 +185,7 @@
       <div id="rapSint" hidden>
         <p class="step">Ronde 1 · de Sint</p>
         <div class="actions"><button class="btn btn-red" id="playRap">▶ Sint, drop de beat</button></div>
-        <div class="lyrics" id="lyrics">${C.rapTekst.map((r) => `<p>${r}</p>`).join("")}</div>
+        <p class="rap-now" id="rapNow" hidden>🎵 De Sint rapt… luister goed.</p>
       </div>
       <div id="rapLars" hidden>
         <p class="step">Ronde 2 · ${C.naam}</p>
@@ -213,41 +215,30 @@
       spin();
     };
 
-    const lines = [...document.querySelectorAll("#lyrics p")];
-    const mark = (k) => {
-      lines.forEach((p, i) => { p.className = i < k ? "past" : i === k ? "now" : ""; });
-      if (lines[k]) lines[k].scrollIntoView({ block: "nearest", behavior: "smooth" });
-    };
     const sintDone = () => {
-      stopRap(); mark(lines.length);
+      stopRap();
+      $("#rapNow").hidden = true;
       playScene([["sint", `Boem. Jouw beurt, ${C.naam}. Als je durft.`, 3.5]]);
       $("#rapLars").hidden = false;
       $("#rapLars").scrollIntoView({ behavior: "smooth", block: "start" });
     };
 
+    // Ronde 1: alleen de muziek. Sint en Lars draaien naar elkaar, armen over elkaar,
+    // Sint zet zijn staf neer, ze deinen mee en Sint praat rustig mee (geen tekst/ballonnen).
     $("#playRap").onclick = () => {
       stopRap(); cancelScene();
+      hideBubbles();
       $("#playRap").textContent = "↻ Opnieuw vanaf het begin";
       audio.src = C.rapAudio;
       audio.currentTime = 0;
       audio.play().then(() => {
-        // tekst verdeeld over de duur van de mp3; Sint rapt (mond beweegt) de hele regel
-        const dur = () => audio.duration || 130;
-        let last = -1;
-        rapTimer = setInterval(() => {
-          const per = dur() / lines.length;
-          const k = Math.min(lines.length - 1, Math.floor(audio.currentTime / per));
-          if (k !== last) { last = k; mark(k); sint(wrap(C.rapTekst[k]), per, per); }
-        }, 200);
+        rapPlaying = true;
+        $("#rapNow").hidden = false;
+        g("rap_start", C.rapBpm || 91.34);
         audio.onended = sintDone;
       }).catch(() => {
-        // mp3 niet te laden: Sint leest elke regel voor
-        let k = 0;
-        const next = () => {
-          if (k >= lines.length) return sintDone();
-          mark(k); sint(wrap(C.rapTekst[k]), 3.2); k++;
-        };
-        next(); rapTimer = setInterval(next, 3400);
+        $("#rapNow").hidden = false;
+        $("#rapNow").textContent = "De muziek kon niet starten. Tik nog een keer op de knop.";
       });
     };
 
@@ -256,7 +247,7 @@
     $("#larsStart").onclick = () => {
       stopRap(); cancelScene();
       $("#larsStart").hidden = true; $("#larsKlaar").hidden = false;
-      const keep = () => lars("🎤 ...", 4, 4);
+      const keep = () => lars("", 4, 4);   // mond beweegt, geen tekstballon
       keep(); larsTalk = setInterval(keep, 3800);
     };
     $("#larsKlaar").onclick = () => {
@@ -364,12 +355,15 @@
     const m = e.data;
     if (!m || m.type !== "speech") return;
     const el = m.who === "lars" ? $("#bubbleLars") : $("#bubbleSint");
+    if (!String(m.text).trim()) { el.hidden = true; return; }
     el.textContent = String(m.text).replace(/\s*\n\s*/g, " ");
     el.hidden = false;
     el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
     clearTimeout(bubbleTimers[m.who]);
     bubbleTimers[m.who] = setTimeout(() => (el.hidden = true), Math.max(1.5, +m.dur || 3) * 1000 + 600);
   });
+
+  function hideBubbles() { $("#bubbleSint").hidden = true; $("#bubbleLars").hidden = true; }
 
   // ---------------- start ----------------
   document.querySelectorAll(".naam").forEach((n) => (n.textContent = C.naam));

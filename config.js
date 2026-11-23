@@ -40,6 +40,7 @@ window.SURPRISE_CONFIG = {
   // Level 2: zet de rap als mp3 in website/audio/rap.mp3.
   // Zonder mp3 leest de Sint de tekst zelf voor in zijn tekstballon.
   rapAudio: "audio/rap.mp3",
+  rapBpm: 91.34,   // gemeten tempo van rap.mp3 (Sint en Lars deinen hierop mee)
 
   // Rap-tekst (uit rap.docx). Elke regel verschijnt als karaoke.
   rapTekst: [
