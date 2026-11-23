@@ -252,11 +252,13 @@
       const names = ["Sint", C.naam]; let n = 0, delay = 70;
       const spin = () => {
         $("#tossName").textContent = names[n++ % 2];
+        radTick();
         delay *= 1.13;
         if (delay < 420 || n % 2 === 1) setTimeout(spin, delay);
         else {
           $("#tossName").textContent = "Sint";
           $("#toss").classList.add("won");
+          radTick(); setTimeout(ping, 120);
           playScene([["sint", "Ha! De Sint begint. Natuurlijk.", 3.2],
                      ["lars", "Dat is doorgestoken kaart!", 3.0],
                      ["sint", "Stil jij. DJ Piet, drop die beat!", 3.2]]);
@@ -386,6 +388,10 @@
 
   // ---------------- geluidseffecten (Godot vraagt erom via postMessage) ----------------
   const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.mp3"), ping: new Audio("audio/ping.wav") };
+  // rad-tikjes: kleine pool zodat snelle tikjes elkaar niet afkappen
+  const RAD = Array.from({ length: 4 }, () => { const a = new Audio("audio/rad.wav"); a.preload = "auto"; return a; });
+  let radI = 0;
+  const radTick = () => { const a = RAD[radI++ % RAD.length]; try { a.currentTime = 0; a.play().catch(() => {}); } catch {} };
   const ping = () => { try { SFX.ping.currentTime = 0; SFX.ping.play().catch(() => {}); } catch {} };
   Object.values(SFX).forEach((a) => (a.preload = "auto"));
   function unlockSfx() {   // telefoons: geluid moet eerst één keer binnen een klik gestart zijn
