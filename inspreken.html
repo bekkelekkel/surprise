@@ -33,6 +33,10 @@
     .ib:disabled { opacity: .35; cursor: default; }
     .notice { background: rgba(242,182,50,.15); border: 1px solid rgba(242,182,50,.5); border-radius: 12px; padding: 12px 14px; color: var(--cream); }
     .notice.err { background: rgba(179,21,27,.25); border-color: var(--red); }
+    .rec-banner { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: flex; gap: 14px; align-items: center;
+      justify-content: center; flex-wrap: wrap; padding: 12px 16px; background: var(--red); color: #fff; font-weight: 800;
+      box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .rec-banner .btn { padding: 10px 26px; font-size: 18px; }
     @media (max-width: 600px) {
       .line { grid-template-columns: 1fr; }
       .who { width: 64px; }
@@ -44,7 +48,7 @@
     <header class="rec-head">
       <p class="eyebrow">Alleen voor de makers</p>
       <h1>Stemmen inspreken</h1>
-      <p>Neem per zin de stem op van de Sint of van Lars. Klik op <b>● Opnemen</b>, spreek de zin in en klik op <b>■ Stop</b>.
+      <p>Neem per zin de stem op van de Sint of van Lars. Klik op <b>● Opnemen</b>, spreek de zin in en klik op <b>■ Stop</b> (in de rode balk bovenin, of druk op de spatiebalk). Na maximaal 20 seconden stopt hij vanzelf.
         Met <b>▶</b> luister je terug, en een nieuwe opname vervangt de oude. Je opnames blijven in deze browser bewaard, ook als je de pagina sluit.
         Klaar? Klik op <b>Download alles</b> en geef het zip-bestand aan Claude.</p>
       <p class="notice" id="micNote">Tip: gebruik een rustige ruimte en houd de telefoon of microfoon op ongeveer een hand afstand. Je mag overdrijven: het is de Sint.</p>
@@ -54,6 +58,11 @@
       <span class="count" id="count">0 / 0 ingesproken</span>
       <span class="spacer"></span>
       <button class="btn btn-gold" id="zipBtn" disabled>⬇ Download alles (zip)</button>
+    </div>
+
+    <div class="rec-banner" id="recBanner" hidden>
+      <span id="recText"></span>
+      <button class="btn btn-gold" id="recStop">■ Stop</button>
     </div>
 
     <main id="list"></main>
@@ -128,7 +137,7 @@
               <button class="ib play" ${r ? "" : "disabled"} title="Afspelen">▶</button>
               <button class="ib del" ${r ? "" : "disabled"} title="Verwijderen">🗑</button>
             </div>`;
-          row.querySelector(".rec").onclick = () => toggleRec(l, row);
+          row.querySelector(".rec").onclick = () => toggleRec(l);
           row.querySelector(".play").onclick = () => play(l.key);
           row.querySelector(".del").onclick = async () => {
             if (!confirm("Deze opname verwijderen?")) return;
@@ -140,54 +149,94 @@
       }
       const n = all.filter((l) => recs.has(l.key)).length;
       $("#count").textContent = `${n} / ${all.length} ingesproken`;
-      $("#zipBtn").disabled = n === 0;
+      $("#zipBtn").disabled = n === 0 || st.phase !== "idle";
+      updateUI();
     }
 
-    // ---------- opnemen ----------
-    let stream = null, recorder = null, current = null;
+    // ---------- opnemen (vaste toestanden: idle → recording → processing → idle) ----------
+    let stream = null;
+    const st = { phase: "idle", key: null, line: null, mr: null, t0: 0, tick: null, auto: null };
     const pickType = () => ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"]
       .find((t) => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) || "";
 
-    async function toggleRec(line, row) {
-      if (recorder && recorder.state === "recording") {
-        const wasSame = current && current.key === line.key;
-        recorder.stop();
-        if (wasSame) return;
+    function updateUI() {
+      document.querySelectorAll(".line").forEach((row) => {
+        const b = row.querySelector(".rec"), mine = row.dataset.key === st.key;
+        row.classList.toggle("recording", mine && st.phase === "recording");
+        b.classList.toggle("on", mine && st.phase === "recording");
+        if (mine && st.phase === "starting") b.textContent = "… microfoon";
+        else if (mine && st.phase === "recording") b.textContent = "■ Stop";
+        else if (mine && st.phase === "processing") b.textContent = "⏳ Bezig…";
+        else b.textContent = "● Opnemen";
+        b.disabled = st.phase !== "idle" && !(mine && st.phase === "recording");
+      });
+      const ban = $("#recBanner");
+      ban.hidden = st.phase === "idle";
+      if (st.phase === "recording") {
+        const sec = Math.floor((Date.now() - st.t0) / 1000);
+        $("#recText").textContent = `● Opname loopt (${sec} s): “${st.line.text}”`;
+        $("#recStop").hidden = false;
+      } else if (st.phase === "processing") {
+        $("#recText").textContent = "⏳ Opname wordt verwerkt…"; $("#recStop").hidden = true;
+      } else if (st.phase === "starting") {
+        $("#recText").textContent = "Microfoon wordt gestart…"; $("#recStop").hidden = true;
       }
+    }
+
+    function toggleRec(line) {
+      if (st.phase === "recording" && st.key === line.key) return stopRec();
+      if (st.phase !== "idle") return;           // tijdens starten/verwerken: niets doen
+      startRec(line);
+    }
+
+    async function startRec(line) {
+      st.phase = "starting"; st.key = line.key; st.line = line; updateUI();
       try {
         if (!stream) stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       } catch (e) {
+        st.phase = "idle"; st.key = null; updateUI();
         const n = $("#micNote"); n.className = "notice err";
         n.textContent = "De microfoon mag niet gebruikt worden. Sta de microfoon toe (slotje naast het adres) en probeer opnieuw.";
         return;
       }
-      const type = pickType();
-      const myChunks = []; current = line;
+      const type = pickType(), chunks = [];
       const mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-      recorder = mr;
-      mr.ondataavailable = (e) => e.data.size && myChunks.push(e.data);
+      st.mr = mr;
+      mr.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
       mr.onstop = async () => {
-        const raw = new Blob(myChunks, { type: mr.mimeType || type || "audio/webm" });
-        let blob = raw, dur;
+        clearInterval(st.tick); clearTimeout(st.auto);
+        st.phase = "processing"; updateUI();
+        const raw = new Blob(chunks, { type: mr.mimeType || type || "audio/webm" });
+        let blob = raw, dur = 0;
         try { ({ blob, dur } = await cleanUp(raw)); } catch { dur = await durationOf(raw); }
         const rec = { key: line.key, who: line.who, text: line.text, blob, dur, type: blob.type, trimmed: blob.type === "audio/wav" };
         recs.set(line.key, rec); await put(rec);
-        if (recorder === mr) { current = null; render(); play(line.key); }
-        else { // er loopt al een nieuwe opname: alleen de status van deze regel bijwerken
-          const row = document.querySelector(`.line[data-key="${line.key}"]`);
-          if (row) row.classList.add("done");
-        }
+        st.phase = "idle"; st.key = null; st.line = null; st.mr = null;
+        render(); play(line.key);
       };
-      recorder.start();
-      document.querySelectorAll(".line").forEach((r) => r.classList.remove("recording"));
-      row.classList.add("recording");
-      const b = row.querySelector(".rec"); b.textContent = "■ Stop"; b.classList.add("on");
+      mr.start(250);                              // elke 250 ms een stukje: niets gaat verloren
+      st.phase = "recording"; st.t0 = Date.now();
+      st.tick = setInterval(updateUI, 250);
+      st.auto = setTimeout(stopRec, 20000);       // veiligheid: na 20 s vanzelf stoppen
+      updateUI();
     }
+
+    function stopRec() {
+      if (st.phase !== "recording" || !st.mr) return;
+      st.phase = "processing"; updateUI();
+      try { st.mr.stop(); } catch { st.phase = "idle"; st.key = null; render(); }
+    }
+
+    // spatiebalk = stoppen
+    addEventListener("keydown", (e) => {
+      if (e.code === "Space" && st.phase === "recording") { e.preventDefault(); stopRec(); }
+    });
 
     function durationOf(blob) {
       return new Promise((res) => {
         const a = new Audio(); a.preload = "metadata"; a.src = URL.createObjectURL(blob);
-        const done = (d) => { URL.revokeObjectURL(a.src); res(Number.isFinite(d) && d > 0 ? d : 2); };
+        let fin = false;
+        const done = (d) => { if (fin) return; fin = true; URL.revokeObjectURL(a.src); res(Number.isFinite(d) && d > 0 ? d : 2); };
         a.onloadedmetadata = () => {
           if (Number.isFinite(a.duration)) return done(a.duration);
           // webm uit Chrome heeft soms geen duur in de header: even naar het einde springen
@@ -195,6 +244,7 @@
           a.ontimeupdate = () => { a.ontimeupdate = null; done(a.duration); };
         };
         a.onerror = () => done(2);
+        setTimeout(() => done(a.duration), 2000);
       });
     }
 
@@ -264,6 +314,7 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     };
 
+    $("#recStop").onclick = stopRec;
     openDb().then(getAll).then(async (list) => {
       for (const r of list) recs.set(r.key, r);
       render();
