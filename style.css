@@ -169,3 +169,7 @@ body.has-panel .stage { position: sticky; top: 8px; z-index: 5; aspect-ratio: au
 .top-right { display: flex; align-items: center; gap: 14px; }
 .btn-small { font-size: 14px; padding: 7px 14px; background: rgba(255,255,255,.12); color: var(--cream); box-shadow: none; border: 2px solid rgba(242,182,50,.6); }
 .btn-small:hover { background: rgba(242,182,50,.25); }
+
+.toss { margin: 14px auto; width: 160px; height: 70px; border-radius: 14px; display: grid; place-items: center;
+  background: var(--night); color: var(--gold); font: 400 30px "Lilita One", sans-serif; border: 3px dashed var(--gold); }
+.toss.won { background: var(--red); color: #fff; border-style: solid; animation: pop .3s ease-out; }

@@ -6,7 +6,7 @@
   const LEVELS = [
     { id: 1, titel: "GTA", icon: "🚗" },
     { id: 2, titel: "Rap", icon: "🎤" },
-    { id: 3, titel: "Jargon", icon: "🏭" },
+    { id: 3, titel: "Piet?!", icon: "🤷" },
     { id: 4, titel: "Briefje", icon: "✉️" },
     { id: 5, titel: "Fortnite", icon: "🪂" },
   ];
@@ -43,13 +43,14 @@
       } catch {}
     }, 250);
   }
-  const sint = (text, sec = 3.5) => g("sint_talk", `${text}|${sec}`);
-  const lars = (text, sec = 3.0) => g("lars_talk", `${text}|${sec}`);
+  const sint = (text, sec = 3.5, mouth = -1) => g("sint_talk", `${text}|${mouth}|${sec}`);
+  const lars = (text, sec = 3.0, mouth = -1) => g("lars_talk", `${text}|${mouth}|${sec}`);
   const roast = () => C.roasts[Math.floor(Math.random() * C.roasts.length)];
 
   // ---------------- scènes (dialogen) + herhaal ----------------
   let sceneTimers = [];
   let lastScene = null;
+  let currentLevel = null;
   function cancelScene() { sceneTimers.forEach(clearTimeout); sceneTimers = []; }
   function playScene(lines) {
     cancelScene();
@@ -104,11 +105,13 @@
   }
   function closePanel() {
     stopRap();
+    currentLevel = null;
     $("#panel").hidden = true;
     document.body.classList.remove("has-panel");
   }
 
   function complete(id) {
+    currentLevel = null;
     if (!isDone(id)) { done.push(id); save(); }
     g("level_complete", id);
     renderBoard();
@@ -123,6 +126,7 @@
   function openLevel(id) {
     if (!isUnlocked(id)) return;
     stopRap();
+    currentLevel = id;
     playScene(C.levelIntro[id]);
     ({ 1: () => quiz(1, "GTA", "GTA ken jij als je broekzak? Bewijs het maar.", C.gta),
        2: rap,
@@ -170,52 +174,93 @@
     audio.pause();
   }
   function rap() {
-    openPanel(`<p class="step">Opdracht 2 · stap 1</p><h3>Rap battle</h3>
-      <p>De Sint heeft een diss track gemaakt. Over jou. Luister goed — straks ben jij aan de beurt.</p>
-      <div class="actions"><button class="btn btn-red" id="playRap">▶ Speel de diss track</button></div>
-      <div class="lyrics" id="lyrics">${C.rapTekst.map((r) => `<p>${r}</p>`).join("")}</div>
-      <div id="rapStep2" hidden>
-        <p class="step">Stap 2</p>
-        <p><b>Jouw beurt, ${C.naam}!</b> Rap minimaal 4 regels terug naar de Sint. De familie is de jury.</p>
-        <div class="actions"><button class="btn btn-gold" id="juryOk">Jury: gehaald! 🔥</button></div>
+    openPanel(`<p class="step">Opdracht 2 · rap battle</p><h3>Sint vs ${C.naam}</h3>
+      <p>Allebei een disrap. Eerst wordt er geloot wie mag beginnen.</p>
+      <div class="toss" id="toss"><span id="tossName">?</span></div>
+      <div class="actions"><button class="btn btn-gold" id="tossBtn">🎲 Loot wie begint</button></div>
+      <div id="rapSint" hidden>
+        <p class="step">Ronde 1 · de Sint</p>
+        <div class="actions"><button class="btn btn-red" id="playRap">▶ Sint, drop de beat</button></div>
+        <div class="lyrics" id="lyrics">${C.rapTekst.map((r) => `<p>${r}</p>`).join("")}</div>
+      </div>
+      <div id="rapLars" hidden>
+        <p class="step">Ronde 2 · ${C.naam}</p>
+        <p><b>Jouw beurt, ${C.naam}!</b> Geef de Sint een disrap terug. Druk op <b>Klaar</b> als je klaar bent.</p>
+        <div class="actions"><button class="btn btn-red" id="larsStart">🎤 Ik ga rappen</button>
+        <button class="btn btn-gold" id="larsKlaar" hidden>Klaar! 🎤⬇</button></div>
       </div>`);
+
+    // loting: draait tussen Sint en Lars, maar... de Sint wint altijd
+    $("#tossBtn").onclick = () => {
+      $("#tossBtn").disabled = true;
+      const names = ["Sint", C.naam]; let n = 0, delay = 70;
+      const spin = () => {
+        $("#tossName").textContent = names[n++ % 2];
+        delay *= 1.13;
+        if (delay < 420 || n % 2 === 1) setTimeout(spin, delay);
+        else {
+          $("#tossName").textContent = "Sint";
+          $("#toss").classList.add("won");
+          playScene([["sint", "Ha! De Sint begint. Natuurlijk.", 3.2],
+                     ["lars", "Dat is doorgestoken kaart!", 3.0],
+                     ["sint", "Stil jij. DJ Piet, drop die beat!", 3.2]]);
+          setTimeout(() => { $("#rapSint").hidden = false; $("#tossBtn").closest(".actions").hidden = true;
+                             $("#rapSint").scrollIntoView({ behavior: "smooth", block: "start" }); }, 1200);
+        }
+      };
+      spin();
+    };
+
     const lines = [...document.querySelectorAll("#lyrics p")];
     const mark = (k) => {
-      lines.forEach((p, n) => { p.className = n < k ? "past" : n === k ? "now" : ""; });
-      if (lines[k]) lines[k].scrollIntoView({ block: "center", behavior: "smooth" });
+      lines.forEach((p, i) => { p.className = i < k ? "past" : i === k ? "now" : ""; });
+      if (lines[k]) lines[k].scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
-    const finish = () => { stopRap(); mark(lines.length); $("#rapStep2").hidden = false; };
-    $("#juryOk").onclick = () => complete(2);
+    const sintDone = () => {
+      stopRap(); mark(lines.length);
+      playScene([["sint", `Boem. Jouw beurt, ${C.naam}. Als je durft.`, 3.5]]);
+      $("#rapLars").hidden = false;
+      $("#rapLars").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
 
     $("#playRap").onclick = () => {
-      stopRap();
-      $("#playRap").textContent = "↻ Opnieuw";
+      stopRap(); cancelScene();
+      $("#playRap").textContent = "↻ Opnieuw vanaf het begin";
       audio.src = C.rapAudio;
       audio.currentTime = 0;
       audio.play().then(() => {
-        // met mp3: tekst gelijkmatig verdelen over de duur, Sint praat mee
-        const dur = () => audio.duration || 120;
+        // tekst verdeeld over de duur van de mp3; Sint rapt (mond beweegt) de hele regel
+        const dur = () => audio.duration || 130;
         let last = -1;
         rapTimer = setInterval(() => {
-          const k = Math.min(lines.length - 1, Math.floor((audio.currentTime / dur()) * lines.length));
-          if (k !== last) {
-            last = k; mark(k);
-            sint(wrap(C.rapTekst[k]), dur() / lines.length);
-          }
-        }, 250);
-        audio.onended = finish;
+          const per = dur() / lines.length;
+          const k = Math.min(lines.length - 1, Math.floor(audio.currentTime / per));
+          if (k !== last) { last = k; mark(k); sint(wrap(C.rapTekst[k]), per, per); }
+        }, 200);
+        audio.onended = sintDone;
       }).catch(() => {
-        // zonder mp3: Sint leest elke regel voor in zijn tekstballon
+        // mp3 niet te laden: Sint leest elke regel voor
         let k = 0;
         const next = () => {
-          if (k >= lines.length) return finish();
-          mark(k);
-          sint(wrap(C.rapTekst[k]), 3.2);
-          k++;
+          if (k >= lines.length) return sintDone();
+          mark(k); sint(wrap(C.rapTekst[k]), 3.2); k++;
         };
-        next();
-        rapTimer = setInterval(next, 3400);
+        next(); rapTimer = setInterval(next, 3400);
       });
+    };
+
+    // Lars rapt live; zijn mond beweegt tot hij op Klaar drukt
+    let larsTalk = null;
+    $("#larsStart").onclick = () => {
+      stopRap(); cancelScene();
+      $("#larsStart").hidden = true; $("#larsKlaar").hidden = false;
+      const keep = () => lars("🎤 ...", 4, 4);
+      keep(); larsTalk = setInterval(keep, 3800);
+    };
+    $("#larsKlaar").onclick = () => {
+      clearInterval(larsTalk);
+      lars("Mic drop.", 2.0);
+      setTimeout(() => complete(2), 1500);
     };
   }
   // tekstballon: regel afbreken op ~16 tekens
@@ -231,16 +276,18 @@
 
   // ---------------- Level 3: jargon ----------------
   function jargon() {
-    openPanel(`<p class="step">Opdracht 3</p><h3>Technische Bedrijfskunde</h3>
-      <p>Leg deze termen uit aan de familie. Snappen ze er niks van maar moeten ze lachen? Dan heb je het goed gedaan.</p>
+    openPanel(`<p class="step">Opdracht 3</p><h3>Piet snapt het niet</h3>
+      <p>Piet snapt helemaal niks van Technische Bedrijfskunde. Leg hem deze termen uit, ${C.naam}.
+      (De familie speelt Piet.) Snapt Piet het? Vink hem af.</p>
       <div class="terms">${C.jargon.map((j, n) => `<label class="term"><input type="checkbox" data-n="${n}"><span><b>${j.term}</b><small>${j.tip}</small></span></label>`).join("")}</div>
-      <div class="actions"><button class="btn btn-gold" id="lachten" disabled>Ze lachten! 😂</button></div>`);
+      <div class="actions"><button class="btn btn-gold" id="pietSnapt" disabled>Piet snapt het! 🎓</button></div>`);
     const boxes = [...document.querySelectorAll(".term input")];
+    const reacties = ["Piet: 'Ahhh... nee.'", "Piet: 'Dus... pepernoten?'", "Piet: 'Ik snap het! ...denk ik.'"];
     boxes.forEach((b) => b.addEventListener("change", () => {
-      if (b.checked) { cancelScene(); lars(wrap(C.jargon[b.dataset.n].term + "? Makkie."), 2.5); }
-      $("#lachten").disabled = !boxes.every((x) => x.checked);
+      if (b.checked) { cancelScene(); sint(wrap(reacties[b.dataset.n % reacties.length]), 3); }
+      $("#pietSnapt").disabled = !boxes.every((x) => x.checked);
     }));
-    $("#lachten").onclick = () => complete(3);
+    $("#pietSnapt").onclick = () => complete(3);
   }
 
   // ---------------- Level 4: briefje ----------------
@@ -292,7 +339,7 @@
   }
 
   // ---------------- geluidseffecten (Godot vraagt erom via postMessage) ----------------
-  const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.wav") };
+  const SFX = { tik: new Audio("audio/tik.wav"), scheet: new Audio("audio/scheet.mp3") };
   Object.values(SFX).forEach((a) => (a.preload = "auto"));
   function unlockSfx() {   // telefoons: geluid moet eerst één keer binnen een klik gestart zijn
     for (const a of Object.values(SFX)) {
@@ -306,6 +353,7 @@
     const a = SFX[m.name];
     a.currentTime = 0;
     a.play().catch(() => {});
+    setTimeout(() => (m.name === "tik" ? lars("AU!", 1.6) : lars("BAH! Sint!!", 2.2)), 250);
   });
 
   // ---------------- tekstballonnen (Godot stuurt via postMessage) ----------------
@@ -332,7 +380,14 @@
     if (done.length === 5) win();
   };
   $("#panelClose").onclick = closePanel;
-  $("#replayBtn").onclick = () => (lastScene ? playScene(lastScene) : playIntro());
+  // Herhaal: het level waar je in zit opnieuw (dialoog + opdracht). Zit je niet in een level,
+  // dan het volgende level; alleen helemaal aan het begin de openingsdialoog.
+  $("#replayBtn").onclick = () => {
+    if (currentLevel) return openLevel(currentLevel);
+    const next = LEVELS.find((l) => !isDone(l.id));
+    if (done.length === 0 && $("#panel").hidden) return playScene(C.intro);
+    if (next) openLevel(next.id);
+  };
   $("#winClose").onclick = () => { $("#win").hidden = true; };
   $("#resetBtn").onclick = () => {
     if (confirm("Alle voortgang wissen en opnieuw beginnen?")) { done = []; save(); closePanel(); renderBoard(); }
