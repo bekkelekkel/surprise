@@ -34,8 +34,8 @@ window.SURPRISE_CONFIG = {
   },
 
   // Level 4: de code die op het verstopte briefje staat (hoofdletters maakt niet uit)
-  briefjeCode: "PEPERNOOT",
-  briefjeHint: "Het ligt ergens waar jij nooit kijkt... (tip van Piet: denk aan je huiswerk)",
+  briefjeCode: "POEPSTREEPJE",
+  briefjeHint: "Daar waar jij je strepen nalaat.",
 
   // Level 2: zet de rap als mp3 in website/audio/rap.mp3.
   // Zonder mp3 leest de Sint de tekst zelf voor in zijn tekstballon.
