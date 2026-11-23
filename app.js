@@ -49,6 +49,23 @@
   const lars = (text, sec = 3.0, mouth = -1) => g("lars_talk", `${text}|${mouth}|${sec}`);
   const roast = () => C.roasts[Math.floor(Math.random() * C.roasts.length)];
 
+  // ---------------- ingesproken stemmen (audio/stem/manifest.json) ----------------
+  let VOICES = {};
+  fetch("audio/stem/manifest.json", { cache: "no-cache" })
+    .then((r) => (r.ok ? r.json() : {})).then((m) => (VOICES = m || {})).catch(() => {});
+  const voiceFor = (who, text) => VOICES[VOICE.key(who, text)];
+  const playing = { sint: null, lars: null };
+  function speakVoice(who, text) {
+    const v = voiceFor(who, text);
+    if (!v) return 0;
+    try { if (playing[who]) playing[who].pause(); } catch {}
+    const a = new Audio("audio/stem/" + v.file);
+    playing[who] = a;
+    a.play().catch(() => {});
+    g("mouth", `${who}|${v.dur}`);     // mond beweegt precies zo lang als de opname
+    return v.dur;
+  }
+
   // ---------------- scènes (dialogen) + herhaal ----------------
   let sceneTimers = [];
   let lastScene = null;
@@ -59,8 +76,10 @@
     lastScene = lines;
     let t = 0;
     for (const [who, text, sec] of lines) {
-      sceneTimers.push(setTimeout(() => (who === "lars" ? lars : sint)(wrap(text), sec), t * 1000));
-      t += sec + 0.7;
+      const v = voiceFor(who, text);
+      const len = v ? Math.max(sec, v.dur + 0.4) : sec;
+      sceneTimers.push(setTimeout(() => (who === "lars" ? lars : sint)(wrap(text), len), t * 1000));
+      t += len + 0.7;
     }
   }
   function playIntro() {
@@ -356,6 +375,8 @@
     if (!m || m.type !== "speech") return;
     const el = m.who === "lars" ? $("#bubbleLars") : $("#bubbleSint");
     if (!String(m.text).trim()) { el.hidden = true; return; }
+    const vdur = speakVoice(m.who === "lars" ? "lars" : "sint", m.text);
+    if (vdur) m.dur = Math.max(+m.dur || 0, vdur + 0.3);
     el.textContent = String(m.text).replace(/\s*\n\s*/g, " ");
     el.hidden = false;
     el.classList.remove("pop"); void el.offsetWidth; el.classList.add("pop");
