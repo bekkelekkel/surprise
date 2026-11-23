@@ -191,11 +191,27 @@
   // ---------------- Level 2: rap ----------------
   let rapTimer = null;
   const audio = $("#rapAudio");
+  // ---------------- achtergrondbeat (zacht, in een lus) ----------------
+  const BG_VOL = 0.12;
+  const bg = new Audio("audio/beat.mp3");
+  bg.loop = true; bg.volume = 0; bg.preload = "auto";
+  let bgFade = null;
+  function fadeBg(to, ms = 1200) {
+    clearInterval(bgFade);
+    if (to > 0 && bg.paused) bg.play().catch(() => {});
+    const from = bg.volume, steps = Math.max(1, Math.round(ms / 50)); let i = 0;
+    bgFade = setInterval(() => {
+      i++; bg.volume = Math.max(0, Math.min(1, from + (to - from) * (i / steps)));
+      if (i >= steps) { clearInterval(bgFade); if (to === 0) bg.pause(); }
+    }, 50);
+  }
+
   let rapPlaying = false;
   function stopRap() {
     clearInterval(rapTimer); rapTimer = null;
     audio.pause();
     if (rapPlaying) { rapPlaying = false; g("rap_stop"); }
+    fadeBg(BG_VOL, 2000);   // na de rap van de Sint komt de beat weer terug
   }
   function rap() {
     openPanel(`<p class="step">Opdracht 2 · rap battle</p><h3>Sint vs ${C.naam}</h3>
@@ -248,6 +264,7 @@
     $("#playRap").onclick = () => {
       stopRap(); cancelScene();
       hideBubbles();
+      fadeBg(0, 600);         // beat uit tijdens de rap van de Sint
       $("#playRap").textContent = "↻ Opnieuw vanaf het begin";
       audio.src = C.rapAudio;
       audio.currentTime = 0;
@@ -407,6 +424,7 @@
   document.querySelectorAll(".naam").forEach((n) => (n.textContent = C.naam));
   $("#startBtn").onclick = () => {
     unlockSfx();
+    bg.play().then(() => fadeBg(BG_VOL, 2500)).catch(() => {});
     $("#intro").hidden = true;
     $("#app").hidden = false;
     startGame();
