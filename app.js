@@ -12,7 +12,9 @@
   ];
 
   // ---------------- voortgang ----------------
-  let done = load();
+  // Bij elk laden van de site begint alles opnieuw (geen opgeslagen voortgang).
+  let done = [];
+  try { localStorage.removeItem(STORE); } catch {}
   function load() {
     try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; }
   }
